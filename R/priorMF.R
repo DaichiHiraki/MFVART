@@ -181,7 +181,7 @@ get_prior <- function(y, p, priorStyle = c("Minnesota"),
                       dist = c("Gaussian"),
                       SV = FALSE, aggregation = "identity", 
                       idq = ncol(y), ...){
-  if (!(dist %in% c("Gaussian","Student","OT","cG") ))
+  if (!(dist %in% c("Gaussian","Student","OT","cG","cT") ))
     stop("dist is not implemented.")
   arguments <- eval(substitute(alist(...)))
   r <- ifelse(is.null(arguments$r), K-1, arguments$r)
@@ -254,7 +254,7 @@ get_prior <- function(y, p, priorStyle = c("Minnesota"),
 get_init <- function(prior, samples = 1100, burnin = 100, thin = 1){
   dist = prior$dist
   if (!(dist %in% c("Gaussian","Student",
-                    "MT","OT","cG") ))
+                    "MT","OT","cG","cT") ))
     stop("dist is not implemented.")
 
   SV = prior$SV

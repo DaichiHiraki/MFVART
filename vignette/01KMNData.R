@@ -87,44 +87,44 @@ apply(Chain3$mcmc$param, MARGIN = 2, FUN = median)[46:50]
 #############################################
 prior <- get_prior(y, p = p, dist="cG", SV = T, aggregation = "triangular", idq = c(5))
 inits <- get_init(prior)
-inits <- get_init(prior, samples = 8000, burnin = 3000, thin = 1)
-# prior$ymiss_prior <- 4
+inits <- get_init(prior, samples = 60000, burnin = 10000, thin = 10)
 Chain4 <- BMFVAR.SV(y, K = K, p = p, dist = "cG", y0 = y0, prior = prior, inits = inits)
+# 
+# prior <- get_prior(y, p = p, dist="Gaussian", SV = T, aggregation = "triangular", idq = c(5))
+# inits <- get_init(prior)
+# # prior$ymiss_prior <- 1
+# inits <- get_init(prior, samples = 3000, burnin = 00, thin = 1)
+# # prior$ymiss_prior <- 4
 
-prior <- get_prior(y, p = p, dist="Gaussian", SV = T, aggregation = "triangular", idq = c(5))
-inits <- get_init(prior)
-# prior$ymiss_prior <- 1
-inits <- get_init(prior, samples = 3000, burnin = 00, thin = 1)
-# prior$ymiss_prior <- 4
-Chain5 <- BMFVAR.SV(y, K = K, p = p, dist = "Gaussian", y0 = y0, prior = prior, inits = inits)
-plot(get_post(Chain5$mcmc$param, "B"))
-
-mcmc_tmp <- matrix(NA, nrow = nrow(Chain5$mcmc$y_miss), 
-                   ncol = ncol(Chain5$mcmc$y_miss))
-
-for (i in c(1:nrow(Chain5$mcmc$y_miss))){
-  # Sys.sleep(0.05)
-  # plot(as.numeric(Make_bandSparse(t_max, aggregation="triangular") %*%
-  #              Chain5$mcmc$y_miss[i,])[600:t_max], type = "l", main = i)
-  mcmc_tmp[i,] <- as.numeric(Make_bandSparse(t_max, aggregation="triangular") %*% 
-                               Chain5$mcmc$y_miss[i,])
-}
-
-plot(Chain5$mcmc$y_miss[,690])
-plot(Chain5$mcmc$y_miss[,691])
-plot(Chain5$mcmc$y_miss[,692])
-plot(Chain5$mcmc$y_miss[,693])
-plot(Chain5$mcmc$y_miss[,694])
-
-
-plot(mcmc_tmp[,690])
-plot(mcmc_tmp[,691]) # Obs
-plot(mcmc_tmp[,692])
-plot(mcmc_tmp[,693])
-plot(mcmc_tmp[,694]) # Obs
-plot(mcmc_tmp[,695])
-plot(mcmc_tmp[,696])
-plot(mcmc_tmp[,697]) # Obs
+# Chain5 <- BMFVAR.SV(y, K = K, p = p, dist = "Gaussian", y0 = y0, prior = prior, inits = inits)
+# plot(get_post(Chain5$mcmc$param, "B"))
+# 
+# mcmc_tmp <- matrix(NA, nrow = nrow(Chain5$mcmc$y_miss), 
+#                    ncol = ncol(Chain5$mcmc$y_miss))
+# 
+# for (i in c(1:nrow(Chain5$mcmc$y_miss))){
+#   # Sys.sleep(0.05)
+#   # plot(as.numeric(Make_bandSparse(t_max, aggregation="triangular") %*%
+#   #              Chain5$mcmc$y_miss[i,])[600:t_max], type = "l", main = i)
+#   mcmc_tmp[i,] <- as.numeric(Make_bandSparse(t_max, aggregation="triangular") %*% 
+#                                Chain5$mcmc$y_miss[i,])
+# }
+# 
+# plot(Chain5$mcmc$y_miss[,690])
+# plot(Chain5$mcmc$y_miss[,691])
+# plot(Chain5$mcmc$y_miss[,692])
+# plot(Chain5$mcmc$y_miss[,693])
+# plot(Chain5$mcmc$y_miss[,694])
+# 
+# 
+# plot(mcmc_tmp[,690])
+# plot(mcmc_tmp[,691]) # Obs
+# plot(mcmc_tmp[,692])
+# plot(mcmc_tmp[,693])
+# plot(mcmc_tmp[,694]) # Obs
+# plot(mcmc_tmp[,695])
+# plot(mcmc_tmp[,696])
+# plot(mcmc_tmp[,697]) # Obs
 
 ############################################
 prior <- get_prior(y, p = p, dist="Gaussian", SV = T, aggregation = "triangular", idq = c(5))

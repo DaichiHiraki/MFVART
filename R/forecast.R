@@ -1,19 +1,22 @@
 #' @export
-metrics <- function(Y_obs_i_j, Y_sim_i_j){
+metrics <- function(Y_obs_i_j, Y_sim_i_j, Y_mu_i_j, Y_sd_i_j){
   MSE <- (mean(Y_sim_i_j) - Y_obs_i_j)^2
   MAE <- abs(mean(Y_sim_i_j) - Y_obs_i_j)
   Quantile <- quantile(Y_sim_i_j, probs = c(0.05,0.10,0.5,0.90, 0.95))
   emp_CDF <- ecdf(x = Y_sim_i_j)(Y_obs_i_j)
-  predict_den <- stats::density(Y_sim_i_j, adjust = 1)
-
-  id <- which(predict_den$y == 0);
-      if (length(id)>0) {
-        for (fix in id){
-          predict_den$y[fix] <- mean(predict_den$y[(fix-1):(fix+1)])
-        }
-      }
-  appximate_density <- smooth.spline(x = predict_den$x, y = log(predict_den$y), df = 10)
-  log_ps1 <- - predict(appximate_density, Y_obs_i_j)$y # Smaller is better
+  # predict_den <- stats::density(Y_sim_i_j, adjust = 1)
+  # 
+  # id <- which(predict_den$y == 0);
+  #     if (length(id)>0) {
+  #       for (fix in id){
+  #         predict_den$y[fix] <- mean(predict_den$y[(fix-1):(fix+1)])
+  #       }
+  #     }
+  # appximate_density <- smooth.spline(x = predict_den$x, y = log(predict_den$y), df = 10)
+  # log_ps1 <- - predict(appximate_density, Y_obs_i_j)$y # Smaller is better
+  
+  log_ps1 <- - log(mean(dnorm(Y_obs_i_j, mean = Y_mu_i_j, sd = Y_sd_i_j)))
+  
   # fitdistrplus::fitdist(Y_sim_i_j, distr = "sstd", 
   #                       method="mle", start=list(mu = 0, sigma = 1, skew = 1, shape = 5))
   predict_den_skewt <- rugarch::fitdist(distribution = "sstd", Y_sim_i_j, control=list())

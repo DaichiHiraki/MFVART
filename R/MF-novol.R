@@ -85,10 +85,10 @@ BMFVAR.Gaussian.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL
     y_temp <- y
     y_temp[,idq] <- 0
     y_temp <- matrix(t(y_temp)[is.na(t(y))], ncol = 1)
-    S_select <- Make_SectMat(y_temp)
+    S_select_temp <- Make_SectMat(y_temp)
     # Account for the missing in other columns rather than in low freq columns
     M_aggregate <- kronecker(Make_bandSparse(t_max, aggregation)[!is.na(y_raw[,idq[1] ]),],
-                             Diagonal(length(idq))) %*% Matrix::t(S_select$S_obs)
+                             Diagonal(length(idq))) %*% Matrix::t(S_select_temp$S_obs)
   }
   
   
@@ -130,9 +130,16 @@ BMFVAR.Gaussian.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL
   # Output
   mcmc <- matrix(NA, nrow = m*K + 0.5*K*(K-1) + K,
                  ncol = (samples - inits$burnin)%/% inits$thin)
-  My_miss <- matrix(NA, nrow = n_miss,
-                    ncol = (samples - inits$burnin)%/% inits$thin)
-                
+  My_miss <- y_miss_mu <- y_miss_sd <- matrix(NA, nrow = n_miss,
+                                              ncol = (samples - inits$burnin)%/% inits$thin)
+  id_miss <- (1:(t_max*K))[is.na(t(y))] # Location of Y_miss
+  id_miss_t <- rep(1:t_max, each = K)[id_miss] # Time of Y_miss
+  id_miss_k <- rep(1:K, t_max)[id_miss]       # Variable k of Y_miss
+  id_m_m <- (1:length(id_miss))[! id_miss_k  %in% idq ] # ID of ragged monthly Y_miss = S_select_temp$S_miss@i + 1
+  id_m_q <- (1:length(id_miss))[id_miss_k  %in% idq ] # ID of ragged quarterly Y_miss = S_select_temp$S_obs@i + 1
+  M_forecast <- kronecker(Make_bandSparse(t_max, aggregation)[is.na(y[,idq[1] ]),],
+                          Diagonal(length(idq))) %*%  Matrix::t(S_select_temp$S_obs)
+  
   for (j in c(1:samples)){
     
     # # Sample y missing
@@ -149,15 +156,25 @@ BMFVAR.Gaussian.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL
     if (aggregation == "identity"){
       # sample from N( K^-1 b, K^-1)
       U.chol <- Matrix::chol( K_y_miss )
-      ymiss_vec <- backsolve(U.chol, backsolve(U.chol, b_y_miss,
-                                               upper.tri = T, transpose = T ) + rnorm(n_miss) ) 
+      # ymiss_vec <- backsolve(U.chol, backsolve(U.chol, b_y_miss,
+      #                                          upper.tri = T, transpose = T ) + rnorm(n_miss) ) 
+      ym_mu_post <- backsolve(U.chol, backsolve(U.chol, b_y_miss, upper.tri = T, transpose = T )) 
+      ym_Sigma_post <- backsolve(U.chol, backsolve(U.chol, diag(n_miss), upper.tri = T, transpose = T)) 
+      ymiss_vec <- ym_mu_post + backsolve(U.chol, rnorm(n_miss) )
+      ym_sd_post <- sqrt(diag(ym_Sigma_post))
     }
     if (aggregation == "average" || aggregation == "triangular"){
       K_bar_y_miss <- K_y_miss + K_prior_y_miss
       b_bar_y_miss <- b_y_miss + b_prior_y_miss
       U.chol <- Matrix::chol( K_bar_y_miss )
-      ymiss_vec <- backsolve(U.chol, backsolve(U.chol, b_bar_y_miss,
-                                               upper.tri = T, transpose = T ) + rnorm(n_miss) ) 
+      
+      ym_mu_post <- backsolve(U.chol, backsolve(U.chol, b_bar_y_miss, upper.tri = T, transpose = T )) 
+      ym_Sigma_post <- backsolve(U.chol, backsolve(U.chol, diag(n_miss), upper.tri = T, transpose = T)) 
+      ymiss_vec <- ym_mu_post + backsolve(U.chol, rnorm(n_miss) )
+      #Forecast mean and sd
+      ym_sd_post <- sqrt(diag(ym_Sigma_post))
+      ym_sd_post[id_m_q] <- sqrt(Matrix::diag(M_forecast %*% ym_Sigma_post %*% Matrix::t(M_forecast)))
+      ym_mu_post[id_m_q] <- M_forecast %*% ym_mu_post
     }
     
     yt_vec <- S_obs%*% yobs_vec + S_miss%*% ymiss_vec
@@ -211,6 +228,8 @@ BMFVAR.Gaussian.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL
     if ((j > inits$burnin) & (j %% inits$thin == 0)){
       mcmc[, (j - inits$burnin) %/% inits$thin] <- c(b_sample, a_sample, sigma)
       My_miss[, (j - inits$burnin) %/% inits$thin] <- ymiss_vec
+      y_miss_mu[, (j - inits$burnin) %/% inits$thin] <- ym_mu_post
+      y_miss_sd[, (j - inits$burnin) %/% inits$thin] <- ym_sd_post
     }
       
     if (j %% 1000 == 0) { cat(" Iteration ", j, " \n")}
@@ -222,14 +241,16 @@ BMFVAR.Gaussian.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL
     y_raw[,idq] <- NA
   }
   nameY <- matrix(paste("y", repcol(c(1:K),t_max), reprow(c(1:t_max),K), sep = "_"), nrow = K)
-  row.names(My_miss) <- nameY[is.na(t(y_raw))]
+  row.names(My_miss) <- row.names(y_miss_mu) <-  row.names(y_miss_sd) <- nameY[is.na(t(y_raw))]
   
   row.names(mcmc) <- c( paste("B0",c(1:K), sep = ""),
                         sprintf("B%d_%d_%d",reprow(c(1:p),K*K), rep(repcol(c(1:K),K), p), rep(reprow(c(1:K),K), p)),
                         nameA,
                         paste("sigma",c(1:K), sep = ""))
   return(list( param = as.mcmc(t(mcmc)),
-               y_miss = as.mcmc(t(My_miss))
+               y_miss = as.mcmc(t(My_miss)),
+               y_miss_mu =  as.mcmc(t(y_miss_mu)),
+               y_miss_sd =  as.mcmc(t(y_miss_sd))
          ))
 }
 
@@ -269,10 +290,10 @@ BMFVAR.Student.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL)
     y_temp <- y
     y_temp[,idq] <- 0
     y_temp <- matrix(t(y_temp)[is.na(t(y))], ncol = 1)
-    S_select <- Make_SectMat(y_temp)
+    S_select_temp <- Make_SectMat(y_temp)
     # Account for the missing in other columns rather than in low freq columns
     M_aggregate <- kronecker(Make_bandSparse(t_max, aggregation)[!is.na(y_raw[,idq[1] ]),],
-                             Diagonal(length(idq))) %*% Matrix::t(S_select$S_obs)
+                             Diagonal(length(idq))) %*% Matrix::t(S_select_temp$S_obs)
   }
   
   # prior B
@@ -325,8 +346,15 @@ BMFVAR.Student.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL)
   # Output
   mcmc <- matrix(NA, nrow = m*K + 0.5*K*(K-1) + K + 1 + t_max,
                  ncol = (samples - inits$burnin)%/% inits$thin)
-  My_miss <- matrix(NA, nrow = n_miss,
-                    ncol = (samples - inits$burnin)%/% inits$thin)
+  My_miss <- y_miss_mu <- y_miss_sd <- matrix(NA, nrow = n_miss,
+                                              ncol = (samples - inits$burnin)%/% inits$thin)
+  id_miss <- (1:(t_max*K))[is.na(t(y))] # Location of Y_miss
+  id_miss_t <- rep(1:t_max, each = K)[id_miss] # Time of Y_miss
+  id_miss_k <- rep(1:K, t_max)[id_miss]       # Variable k of Y_miss
+  id_m_m <- (1:length(id_miss))[! id_miss_k  %in% idq ] # ID of ragged monthly Y_miss = S_select_temp$S_miss@i + 1
+  id_m_q <- (1:length(id_miss))[id_miss_k  %in% idq ] # ID of ragged quarterly Y_miss = S_select_temp$S_obs@i + 1
+  M_forecast <- kronecker(Make_bandSparse(t_max, aggregation)[is.na(y[,idq[1] ]),],
+                          Diagonal(length(idq))) %*%  Matrix::t(S_select_temp$S_obs)
   
   for (j in c(1:samples)){
     
@@ -345,15 +373,25 @@ BMFVAR.Student.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL)
     if (aggregation == "identity"){
       # sample from N( K^-1 b, K^-1)
       U.chol <- Matrix::chol( K_y_miss )
-      ymiss_vec <- backsolve(U.chol, backsolve(U.chol, b_y_miss,
-                                               upper.tri = T, transpose = T ) + rnorm(n_miss) ) 
+      # ymiss_vec <- backsolve(U.chol, backsolve(U.chol, b_y_miss,
+      #                                          upper.tri = T, transpose = T ) + rnorm(n_miss) ) 
+      ym_mu_post <- backsolve(U.chol, backsolve(U.chol, b_y_miss, upper.tri = T, transpose = T )) 
+      ym_Sigma_post <- backsolve(U.chol, backsolve(U.chol, diag(n_miss), upper.tri = T, transpose = T)) 
+      ymiss_vec <- ym_mu_post + backsolve(U.chol, rnorm(n_miss) )
+      ym_sd_post <- sqrt(diag(ym_Sigma_post))
     }
     if (aggregation == "average" || aggregation == "triangular"){
       K_bar_y_miss <- K_y_miss + K_prior_y_miss
       b_bar_y_miss <- b_y_miss + b_prior_y_miss
       U.chol <- Matrix::chol( K_bar_y_miss )
-      ymiss_vec <- backsolve(U.chol, backsolve(U.chol, b_bar_y_miss,
-                                               upper.tri = T, transpose = T ) + rnorm(n_miss) ) 
+      
+      ym_mu_post <- backsolve(U.chol, backsolve(U.chol, b_bar_y_miss, upper.tri = T, transpose = T )) 
+      ym_Sigma_post <- backsolve(U.chol, backsolve(U.chol, diag(n_miss), upper.tri = T, transpose = T)) 
+      ymiss_vec <- ym_mu_post + backsolve(U.chol, rnorm(n_miss) )
+      #Forecast mean and sd
+      ym_sd_post <- sqrt(diag(ym_Sigma_post))
+      ym_sd_post[id_m_q] <- sqrt(Matrix::diag(M_forecast %*% ym_Sigma_post %*% Matrix::t(M_forecast)))
+      ym_mu_post[id_m_q] <- M_forecast %*% ym_mu_post
     }
     
     yt_vec <- S_obs%*% yobs_vec + S_miss%*% ymiss_vec
@@ -445,6 +483,8 @@ BMFVAR.Student.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL)
     if ((j > inits$burnin) & (j %% inits$thin == 0)){
       mcmc[, (j - inits$burnin) %/% inits$thin] <- c(b_sample, a_sample, sigma, nu, as.numeric(w_sample))
       My_miss[, (j - inits$burnin) %/% inits$thin] <- ymiss_vec
+      y_miss_mu[, (j - inits$burnin) %/% inits$thin] <- ym_mu_post
+      y_miss_sd[, (j - inits$burnin) %/% inits$thin] <- ym_sd_post
     }
     
     if (j %% 1000 == 0) {
@@ -459,7 +499,7 @@ BMFVAR.Student.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL)
     y_raw[,idq] <- NA
   }
   nameY <- matrix(paste("y", repcol(c(1:K),t_max), reprow(c(1:t_max),K), sep = "_"), nrow = K)
-  row.names(My_miss) <- nameY[is.na(t(y_raw))]
+  row.names(My_miss) <- row.names(y_miss_mu) <-  row.names(y_miss_sd) <- nameY[is.na(t(y_raw))]
   
   row.names(mcmc) <- c( paste("B0",c(1:K), sep = ""),
                         sprintf("B%d_%d_%d",reprow(c(1:p),K*K), rep(repcol(c(1:K),K), p), rep(reprow(c(1:K),K), p)),
@@ -469,7 +509,9 @@ BMFVAR.Student.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL)
                         paste("w",c(1:t_max), sep = ""))
   
   return(list( param = as.mcmc(t(mcmc)),
-               y_miss = as.mcmc(t(My_miss))
+               y_miss = as.mcmc(t(My_miss)),
+               y_miss_mu =  as.mcmc(t(y_miss_mu)),
+               y_miss_sd =  as.mcmc(t(y_miss_sd))
   ))
 }
 
@@ -510,10 +552,10 @@ BMFVAR.MT.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL){
     y_temp <- y
     y_temp[,idq] <- 0
     y_temp <- matrix(t(y_temp)[is.na(t(y))], ncol = 1)
-    S_select <- Make_SectMat(y_temp)
+    S_select_temp <- Make_SectMat(y_temp)
     # Account for the missing in other columns rather than in low freq columns
     M_aggregate <- kronecker(Make_bandSparse(t_max, aggregation)[!is.na(y_raw[,idq[1] ]),],
-                             Diagonal(length(idq))) %*% Matrix::t(S_select$S_obs)
+                             Diagonal(length(idq))) %*% Matrix::t(S_select_temp$S_obs)
   }
   # prior B
   b_prior = prior$b_prior
@@ -562,8 +604,15 @@ BMFVAR.MT.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL){
   # Output
   mcmc <- matrix(NA, nrow = m*K + 0.5*K*(K-1) + K + K + K*t_max,
                  ncol = (samples - inits$burnin)%/% inits$thin)
-  My_miss <- matrix(NA, nrow = n_miss,
-                    ncol = (samples - inits$burnin)%/% inits$thin)
+  My_miss <- y_miss_mu <- y_miss_sd <- matrix(NA, nrow = n_miss,
+                                              ncol = (samples - inits$burnin)%/% inits$thin)
+  id_miss <- (1:(t_max*K))[is.na(t(y))] # Location of Y_miss
+  id_miss_t <- rep(1:t_max, each = K)[id_miss] # Time of Y_miss
+  id_miss_k <- rep(1:K, t_max)[id_miss]       # Variable k of Y_miss
+  id_m_m <- (1:length(id_miss))[! id_miss_k  %in% idq ] # ID of ragged monthly Y_miss = S_select_temp$S_miss@i + 1
+  id_m_q <- (1:length(id_miss))[id_miss_k  %in% idq ] # ID of ragged quarterly Y_miss = S_select_temp$S_obs@i + 1
+  M_forecast <- kronecker(Make_bandSparse(t_max, aggregation)[is.na(y[,idq[1] ]),],
+                          Diagonal(length(idq))) %*%  Matrix::t(S_select_temp$S_obs)
   for (j in c(1:samples)){
     # # Sample y missing
     H_B <- Make_HB(B, K, p ,t_max)
@@ -585,15 +634,24 @@ BMFVAR.MT.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL){
     if (aggregation == "identity"){
       # sample from N( K^-1 b, K^-1)
       U.chol <- Matrix::chol( K_y_miss )
-      ymiss_vec <- backsolve(U.chol, backsolve(U.chol, b_y_miss,
-                                               upper.tri = T, transpose = T ) + rnorm(n_miss) ) 
+      # ymiss_vec <- backsolve(U.chol, backsolve(U.chol, b_y_miss,
+      #                                          upper.tri = T, transpose = T ) + rnorm(n_miss) ) 
+      ym_mu_post <- backsolve(U.chol, backsolve(U.chol, b_y_miss, upper.tri = T, transpose = T )) 
+      ym_Sigma_post <- backsolve(U.chol, backsolve(U.chol, diag(n_miss), upper.tri = T, transpose = T)) 
+      ymiss_vec <- ym_mu_post + backsolve(U.chol, rnorm(n_miss) )
+      ym_sd_post <- sqrt(diag(ym_Sigma_post))
     }
     if (aggregation == "average" || aggregation == "triangular"){
       K_bar_y_miss <- K_y_miss + K_prior_y_miss
       b_bar_y_miss <- b_y_miss + b_prior_y_miss
       U.chol <- Matrix::chol( K_bar_y_miss )
-      ymiss_vec <- backsolve(U.chol, backsolve(U.chol, b_bar_y_miss,
-                                               upper.tri = T, transpose = T ) + rnorm(n_miss) ) 
+      ym_mu_post <- backsolve(U.chol, backsolve(U.chol, b_bar_y_miss, upper.tri = T, transpose = T )) 
+      ym_Sigma_post <- backsolve(U.chol, backsolve(U.chol, diag(n_miss), upper.tri = T, transpose = T)) 
+      ymiss_vec <- ym_mu_post + backsolve(U.chol, rnorm(n_miss) )
+      #Forecast mean and sd
+      ym_sd_post <- sqrt(diag(ym_Sigma_post))
+      ym_sd_post[id_m_q] <- sqrt(Matrix::diag(M_forecast %*% ym_Sigma_post %*% Matrix::t(M_forecast)))
+      ym_mu_post[id_m_q] <- M_forecast %*% ym_mu_post
     }
     
     yt_vec <- S_obs%*% yobs_vec + S_miss%*% ymiss_vec
@@ -715,6 +773,8 @@ BMFVAR.MT.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL){
     if ((j > inits$burnin) & (j %% inits$thin == 0)){
       mcmc[, (j - inits$burnin) %/% inits$thin] <- c(b_sample, a_sample, sigma, nu, as.numeric(w))
       My_miss[, (j - inits$burnin) %/% inits$thin] <- ymiss_vec
+      y_miss_mu[, (j - inits$burnin) %/% inits$thin] <- ym_mu_post
+      y_miss_sd[, (j - inits$burnin) %/% inits$thin] <- ym_sd_post
     }
     
     if (j %% 1000 == 0) {
@@ -729,7 +789,7 @@ BMFVAR.MT.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL){
     y_raw[,idq] <- NA
   }
   nameY <- matrix(paste("y", repcol(c(1:K),t_max), reprow(c(1:t_max),K), sep = "_"), nrow = K)
-  row.names(My_miss) <- nameY[is.na(t(y_raw))]
+  row.names(My_miss) <- row.names(y_miss_mu) <-  row.names(y_miss_sd) <- nameY[is.na(t(y_raw))]
   
   row.names(mcmc) <- c( paste("B0",c(1:K), sep = ""),
                         sprintf("B%d_%d_%d",reprow(c(1:p),K*K), rep(repcol(c(1:K),K), p), rep(reprow(c(1:K),K), p)),
@@ -740,7 +800,9 @@ BMFVAR.MT.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL){
   )
   
   return(list( param = as.mcmc(t(mcmc)),
-               y_miss = as.mcmc(t(My_miss))
+               y_miss = as.mcmc(t(My_miss)),
+               y_miss_mu =  as.mcmc(t(y_miss_mu)),
+               y_miss_sd =  as.mcmc(t(y_miss_sd))
   ))
 }
 
@@ -779,10 +841,10 @@ BMFVAR.OT.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL){
     y_temp <- y
     y_temp[,idq] <- 0
     y_temp <- matrix(t(y_temp)[is.na(t(y))], ncol = 1)
-    S_select <- Make_SectMat(y_temp)
+    S_select_temp <- Make_SectMat(y_temp)
     # Account for the missing in other columns rather than in low freq columns
     M_aggregate <- kronecker(Make_bandSparse(t_max, aggregation)[!is.na(y_raw[,idq[1] ]),],
-                             Diagonal(length(idq))) %*% Matrix::t(S_select$S_obs)
+                             Diagonal(length(idq))) %*% Matrix::t(S_select_temp$S_obs)
   }
   
   # prior B
@@ -835,8 +897,15 @@ BMFVAR.OT.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL){
   # Output
   mcmc <- matrix(NA, nrow = m*K + 0.5*K*(K-1) + K + K + K*t_max,
                  ncol = (samples - inits$burnin)%/% inits$thin)
-  My_miss <- matrix(NA, nrow = n_miss,
-                    ncol = (samples - inits$burnin)%/% inits$thin)
+  My_miss <- y_miss_mu <- y_miss_sd <- matrix(NA, nrow = n_miss,
+                                              ncol = (samples - inits$burnin)%/% inits$thin)
+  id_miss <- (1:(t_max*K))[is.na(t(y))] # Location of Y_miss
+  id_miss_t <- rep(1:t_max, each = K)[id_miss] # Time of Y_miss
+  id_miss_k <- rep(1:K, t_max)[id_miss]       # Variable k of Y_miss
+  id_m_m <- (1:length(id_miss))[! id_miss_k  %in% idq ] # ID of ragged monthly Y_miss = S_select_temp$S_miss@i + 1
+  id_m_q <- (1:length(id_miss))[id_miss_k  %in% idq ] # ID of ragged quarterly Y_miss = S_select_temp$S_obs@i + 1
+  M_forecast <- kronecker(Make_bandSparse(t_max, aggregation)[is.na(y[,idq[1] ]),],
+                          Diagonal(length(idq))) %*%  Matrix::t(S_select_temp$S_obs)
   
   for (j in c(1:samples)){
     
@@ -855,8 +924,12 @@ BMFVAR.OT.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL){
     if (aggregation == "identity"){
       # sample from N( K^-1 b, K^-1)
       U.chol <- Matrix::chol( K_y_miss )
-      ymiss_vec <- backsolve(U.chol, backsolve(U.chol, b_y_miss,
-                                               upper.tri = T, transpose = T ) + rnorm(n_miss) ) 
+      # ymiss_vec <- backsolve(U.chol, backsolve(U.chol, b_y_miss,
+      #                                          upper.tri = T, transpose = T ) + rnorm(n_miss) ) 
+      ym_mu_post <- backsolve(U.chol, backsolve(U.chol, b_y_miss, upper.tri = T, transpose = T )) 
+      ym_Sigma_post <- backsolve(U.chol, backsolve(U.chol, diag(n_miss), upper.tri = T, transpose = T)) 
+      ymiss_vec <- ym_mu_post + backsolve(U.chol, rnorm(n_miss) )
+      ym_sd_post <- sqrt(diag(ym_Sigma_post))
     }
     if (aggregation == "average" || aggregation == "triangular"){
       K_bar_y_miss <- K_y_miss + K_prior_y_miss
@@ -864,6 +937,13 @@ BMFVAR.OT.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL){
       U.chol <- Matrix::chol( K_bar_y_miss )
       ymiss_vec <- backsolve(U.chol, backsolve(U.chol, b_bar_y_miss,
                                                upper.tri = T, transpose = T ) + rnorm(n_miss) ) 
+      ym_mu_post <- backsolve(U.chol, backsolve(U.chol, b_bar_y_miss, upper.tri = T, transpose = T )) 
+      ym_Sigma_post <- backsolve(U.chol, backsolve(U.chol, diag(n_miss), upper.tri = T, transpose = T)) 
+      ymiss_vec <- ym_mu_post + backsolve(U.chol, rnorm(n_miss) )
+      #Forecast mean and sd
+      ym_sd_post <- sqrt(diag(ym_Sigma_post))
+      ym_sd_post[id_m_q] <- sqrt(Matrix::diag(M_forecast %*% ym_Sigma_post %*% Matrix::t(M_forecast)))
+      ym_mu_post[id_m_q] <- M_forecast %*% ym_mu_post
     }
     
     yt_vec <- S_obs%*% yobs_vec + S_miss%*% ymiss_vec
@@ -952,6 +1032,8 @@ BMFVAR.OT.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL){
     if ((j > inits$burnin) & (j %% inits$thin == 0)){
       mcmc[, (j - inits$burnin) %/% inits$thin] <- c(b_sample, a_sample, sigma, nu, as.numeric(w))
       My_miss[, (j - inits$burnin) %/% inits$thin] <- ymiss_vec
+      y_miss_mu[, (j - inits$burnin) %/% inits$thin] <- ym_mu_post
+      y_miss_sd[, (j - inits$burnin) %/% inits$thin] <- ym_sd_post
     }
     
     if (j %% 1000 == 0) {
@@ -966,7 +1048,7 @@ BMFVAR.OT.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL){
     y_raw[,idq] <- NA
   }
   nameY <- matrix(paste("y", repcol(c(1:K),t_max), reprow(c(1:t_max),K), sep = "_"), nrow = K)
-  row.names(My_miss) <- nameY[is.na(t(y_raw))]
+  row.names(My_miss) <- row.names(y_miss_mu) <-  row.names(y_miss_sd) <- nameY[is.na(t(y_raw))]
   
   row.names(mcmc) <- c( paste("B0",c(1:K), sep = ""),
                         sprintf("B%d_%d_%d",reprow(c(1:p),K*K), rep(repcol(c(1:K),K), p), rep(reprow(c(1:K),K), p)),
@@ -976,7 +1058,9 @@ BMFVAR.OT.novol <- function(y, K, p, y0 = NULL, prior = NULL, inits = NULL){
                         sprintf("w_%d_%d", repcol(c(1:K),t_max), reprow(c(1:t_max),K))
   )
   return(list( param = as.mcmc(t(mcmc)),
-               y_miss = as.mcmc(t(My_miss))
+               y_miss = as.mcmc(t(My_miss)),
+               y_miss_mu =  as.mcmc(t(y_miss_mu)),
+               y_miss_sd =  as.mcmc(t(y_miss_sd))
   ))
 }
 

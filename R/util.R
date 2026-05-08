@@ -290,25 +290,39 @@ sample_h_mod <- function(ytilde, sigma_h = 0.0001*diag(K), h0_mean = rep(0,K),
 ##########################################################################
 
 #' @export
-plot.MFVART <- function(MFVARTobj, element = NULL){
+plot.MFVART <- function(MFVARTobj, element = NULL, namex = "", namey = "", namez = ""){
   if (is.null(element)) {
     y_miss <- MFVARTobj$mcmc$y_miss
     num_sample = nrow(y_miss)
     num_latent = ncol(y_miss)
-    
+    aggregation = MFVARTobj$prior$aggregation
     mcmc_tmp <- matrix(NA, nrow = num_sample, ncol = num_latent)
     for (i in c(1:num_sample)){
-      mcmc_tmp[i,] <- as.numeric(Make_bandSparse(num_latent, aggregation="triangular") %*% y_miss[i,])
+      mcmc_tmp[i,] <- as.numeric(Make_bandSparse(num_latent, aggregation=aggregation) %*% y_miss[i,])
     }
       pdat <- t(apply(mcmc_tmp, 2, function(z) quantile(z, c(0.025, 0.25, 0.5, 0.75, 0.975))))
       xax <- tail(Data$Time, num_latent)
-      matplot(x = xax, y = pdat*1.25, type = "n", ylab = "", xlab = "Time")
-      polygon(c(xax, rev(xax)), c(pdat[,5], rev(pdat[,4])), col = "grey60", border = NA)
-      polygon(c(xax, rev(xax)), c(pdat[,4], rev(pdat[,3])), col = "grey30", border = NA)
-      polygon(c(xax, rev(xax)), c(pdat[,3], rev(pdat[,2])), col = "grey30", border = NA)
-      polygon(c(xax, rev(xax)), c(pdat[,2], rev(pdat[,1])), col = "grey60", border = NA)
-      lines(x = xax, y = pdat[,3], type = "l", col = 1, lwd = 1)
-      abline(h = 0, lty = 2)
+      # matplot(x = xax, y = pdat*1.25, type = "n", ylab = "", xlab = "Time")
+      # polygon(c(xax, rev(xax)), c(pdat[,5], rev(pdat[,4])), col = "grey60", border = NA)
+      # polygon(c(xax, rev(xax)), c(pdat[,4], rev(pdat[,3])), col = "grey30", border = NA)
+      # polygon(c(xax, rev(xax)), c(pdat[,3], rev(pdat[,2])), col = "grey30", border = NA)
+      # polygon(c(xax, rev(xax)), c(pdat[,2], rev(pdat[,1])), col = "grey60", border = NA)
+      # lines(x = xax, y = pdat[,3], type = "l", col = 1, lwd = 1)
+      # abline(h = 0, lty = 2)
+      
+      years <- tail(Data$Time, num_latent)
+      ObsValue <- tail(Data$GDP_growth, num_latent)
+      df <- data.frame(Date = years, Value = pdat[,3], ObsValue = ObsValue)
+      p1 <- ggplot(df, aes(x = Date, y = Value)) +
+        geom_line(color = "black") +
+        geom_point(aes(y = ObsValue), color = "red", size = 1) + # Scatter plot
+        geom_hline(yintercept = 0, linetype = "dashed") +
+        labs(x = namex, y = namey, title = namez) +
+        ylim(c(-10,10)) + 
+        theme_minimal() 
+      p1
+      return(p1)
+      
 
   } else {
     
@@ -332,6 +346,7 @@ plot.MFVART <- function(MFVARTobj, element = NULL){
     abline(h = 0, lty = 2)
   }
 }
+
 
 ##########################################################################
 # Get posterior functions  #
