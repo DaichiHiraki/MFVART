@@ -12,10 +12,10 @@ get_prior_minnesota <- function(y, p, intercept=TRUE, idq = ncol(y),...){
   lambda5 <- ifelse(is.null(arguments$lambda5), 0.05, arguments$lambda5)
   scalefactor <- lambda5/ lambda1
   
-
+  
   t_max <- nrow(y)
   K   <- ncol(y)
-
+  
   # Prior b0 mean
   constant = 0
   B0 <- NULL
@@ -23,7 +23,7 @@ get_prior_minnesota <- function(y, p, intercept=TRUE, idq = ncol(y),...){
     constant = 1
     B0 <- cbind(rep(0,K))
   }
-
+  
   if (p > 0) B0 <- cbind(B0, diag(0.8, nrow = K, ncol = K))
   if (p > 1){
     for (i in c(2:p)){
@@ -31,13 +31,13 @@ get_prior_minnesota <- function(y, p, intercept=TRUE, idq = ncol(y),...){
     }
   }
   b0 <- as.numeric(B0)
-
+  
   #
   # Prior for covariance matrix
   #
-
+  
   sigmasq <- rep(0,K)
-
+  
   if (p > 0){
     for(ii in 1:K){
       var_i = as.numeric(na.exclude(y[,ii]))
@@ -49,65 +49,65 @@ get_prior_minnesota <- function(y, p, intercept=TRUE, idq = ncol(y),...){
   } else {
     sigmasq <- apply(y, MARGIN = 2, FUN = var)
   }
-
-
-
+  
+  
+  
   #print(sigmasq)
-
+  
   #
   # Covariance matrix for the prior
   #
-
+  
   M <- K * p + constant
   Vi <- rep(0, K * M)
-
+  
   #
   # Add Covariance coefficients for intercepts
   #
-
+  
   # Covariance for the intercept
   if (intercept==TRUE){
     for(ii in 1:K){
       Vi[ii]    <- lambda3 * sigmasq[ii]
     }
   }
-
+  
   if (p > 0){
-
-  # without intercept
-  for(jj in 1:p){ #loop over the jj-th lag
-
-    for(kk in 1:K){ #kk-th variable
-
-      for(ii in 1:K){ # loop over the ii-th equation
-
-        indx <- (kk - 1) * K  + (jj - 1) * K * K + ii + constant * K
-
-        if(ii==kk){
-          if (ii %in% idq){
-            Vi[indx] <- lambda5/(jj^lambda4) # lambda1 * scalefactor /(jj^lambda4)
-          } else {
-            Vi[indx] <- lambda1/(jj^lambda4)
-          }
+    
+    # without intercept
+    for(jj in 1:p){ #loop over the jj-th lag
+      
+      for(kk in 1:K){ #kk-th variable
+        
+        for(ii in 1:K){ # loop over the ii-th equation
           
-        } else{
-          if (ii %in% idq){
-            Vi[indx] <- (lambda2 )/(jj ^ lambda4) *(sigmasq[ii] / sigmasq[kk])  
-          }
-          else{
-            Vi[indx] <- (lambda2)/(jj ^ lambda4) *(sigmasq[ii] / sigmasq[kk])  
-          }
+          indx <- (kk - 1) * K  + (jj - 1) * K * K + ii + constant * K
           
+          if(ii==kk){
+            if (ii %in% idq){
+              Vi[indx] <- lambda5/(jj^lambda4) # lambda1 * scalefactor /(jj^lambda4)
+            } else {
+              Vi[indx] <- lambda1/(jj^lambda4)
+            }
+            
+          } else{
+            if (ii %in% idq){
+              Vi[indx] <- (lambda2 )/(jj ^ lambda4) *(sigmasq[ii] / sigmasq[kk])  
+            }
+            else{
+              Vi[indx] <- (lambda2)/(jj ^ lambda4) *(sigmasq[ii] / sigmasq[kk])  
+            }
+            
+          }
         }
       }
     }
-  }
-
+    
   }
   # Vec_to_Mat(Vi, K, p)
-
+  
   V_b_prior = diag(Vi, nrow = K * M, ncol = K * M)
-
+  
   pr <- list(type = "Minnesota",
              p = p,
              intercept = intercept,
@@ -123,19 +123,19 @@ get_prior_OLS <- function(y, p, tau = nrow(y) - p, scale_factor = 4 ){
   K <- ncol(priordat)
   M <- K + p*(K^2) # nr of beta parameters
   numa <- 0.5*K*(K-1) # nr of VCV elements
-
+  
   xt <- NULL
   t_max <- nrow(priordat)
-
+  
   yt = t(y)
   for (i in c( p:(t_max-1))){
     xt <- cbind(xt, rbind(1, vec(yt[,i:(i-p+1)])))
   }
-
+  
   #t_max <- t_max - p
   yt <- t(priordat[(p+1):(dim(priordat)[1]),])  # LHS variable
   tau <- dim(yt)[2] # New sample size
-
+  
   # B0 mean and var
   B0 = yt %*% t(xt) %*% solve( xt %*% t(xt) )
   b0 = matrixcalc::vec(B0)
@@ -143,18 +143,18 @@ get_prior_OLS <- function(y, p, tau = nrow(y) - p, scale_factor = 4 ){
   SSE = yt %*% ( diag(rep(1, tau)) - H ) %*% t(yt)
   Sigma2 = SSE / (tau - K * p -1)
   V_b_prior = kronecker( solve(xt %*% t(xt)), Sigma2  ) * scale_factor # scale factor
-
+  
   # A0 mean and var
   A0 <- t(chol(Sigma2))
   sigma <- diag(A0)
-
+  
   pr <- list(type = "OLS",
              p = p,
              intercept = T,
              b0 = b0,
              V_b_prior = V_b_prior,
              sigma = sigma)
-
+  
 }
 
 #############################################################################
@@ -181,35 +181,35 @@ get_prior <- function(y, p, priorStyle = c("Minnesota"),
                       dist = c("Gaussian"),
                       SV = FALSE, aggregation = "identity", 
                       idq = ncol(y), ...){
-  if (!(dist %in% c("Gaussian","Student","OT","cG","cT") ))
+  if (!(dist %in% c("Gaussian","Student","OT","OST","cG","cT") ))
     stop("dist is not implemented.")
   arguments <- eval(substitute(alist(...)))
+  K <- ncol(y)
   r <- ifelse(is.null(arguments$r), K-1, arguments$r)
   
-  K <- ncol(y)
   M <- K + p*(K^2) # nr of beta parameters
   numa <- 0.5*K*(K-1) # nr of VCV elements
-
+  
   # return b0, V_b_prior, sigma
   if (priorStyle == "Minnesota"){
     prior_sub <- get_prior_minnesota(y, p, intercept = TRUE, idq, ...)
   }
   if (priorStyle == "OLS"){
-
+    
   }
-
-
+  
+  
   # B mean and var
   b0 = prior_sub$b0
   V_b_prior = prior_sub$V_b_prior
-
+  
   # A mean and var
   a0 <- rep(0, numa) # A \sim N(0,10I)
   a_Vprior <- ifelse(is.null(arguments$a_Vprior), 10, arguments$a_Vprior)
   V_a_prior <- diag(x = rep(a_Vprior,numa), nrow = numa, ncol = numa)
-
+  
   sigma <- prior_sub$sigma
-
+  
   #Gaussian
   prior_collect <- list(b_prior=b0, V_b_prior = V_b_prior,
                         a_prior = a0, V_a_prior = V_a_prior,
@@ -220,7 +220,13 @@ get_prior <- function(y, p, priorStyle = c("Minnesota"),
     prior_collect$nu_gam_a = 2
     prior_collect$nu_gam_b = 0.1
   }
- 
+  
+  # OST: gamma_i ~ N(0, 1), independently for i = 1, ..., K.
+  if (dist == "OST") {
+    prior_collect$gamma_prior <- rep(0, K)
+    prior_collect$V_gamma_prior <- diag(1, K)
+  }
+  
   prior_collect$t_max <- nrow(y)
   prior_collect$dist <- dist
   prior_collect$SV <- SV
@@ -254,21 +260,21 @@ get_prior <- function(y, p, priorStyle = c("Minnesota"),
 get_init <- function(prior, samples = 1100, burnin = 100, thin = 1){
   dist = prior$dist
   if (!(dist %in% c("Gaussian","Student",
-                    "MT","OT","cG","cT") ))
+                    "MT","OT","OST","cG","cT") ))
     stop("dist is not implemented.")
-
+  
   SV = prior$SV
   K = length(prior$sigma)
   p = (length(prior$b_prior) / K - 1) / K
-
+  
   A = matrix(0, K, K)
   A[upper.tri(A, diag=FALSE)] = prior$a_prior + sqrt(diag(prior$V_a_prior)) * rnorm(K*(K-1)*0.5)
   A <- t(A)
   diag(A) <- 1
-
+  
   B = matrix(prior$b_prior, nrow = K) + sqrt(diag(prior$V_b_prior)) * rnorm(K + K*K*p)
   sigma = prior$sigma + rnorm(K, 0,1)^2
-
+  
   #Gaussian
   inits <- list(samples = samples,
                 burnin = burnin,
@@ -277,18 +283,34 @@ get_init <- function(prior, samples = 1100, burnin = 100, thin = 1){
                 B0 = B,
                 sigma = sigma
   )
-
+  
   #Student
   if (dist !="Gaussian"){
     inits$nu = 2 + rgamma(1, shape = 2, rate = 0.1)
   }
-
+  
   #MT
   if (dist == "MT" | dist =="OT"){
     inits$nu = 2 + rgamma(K, shape = 2, rate = 0.1)
   }
-  inits$nu <- ifelse(inits$nu > 100, 50, inits$nu)
-
+  if (dist == "OST") {
+    # Draw valid starting values for the Gamma prior truncated to nu > 4.
+    # This does not change the prior itself.
+    nu0 <- numeric(K)
+    for (i in seq_len(K)) {
+      repeat {
+        candidate <- rgamma(1, shape = prior$nu_gam_a,
+                            rate = prior$nu_gam_b)
+        if (candidate > 4) break
+      }
+      nu0[i] <- candidate
+    }
+    inits$nu <- nu0
+    inits$gamma <- rep(0, K)  # Neutral starting value; not a fixed parameter.
+  } else if (!is.null(inits$nu)) {
+    inits$nu <- ifelse(inits$nu > 100, 50, inits$nu)
+  }
+  
   #Stochastic vol
   if(SV){
     h <- matrix(log(prior$sigma^2), ncol = prior$t_max, nrow = K) + 0.0001 * rnorm(prior$t_max * K)
