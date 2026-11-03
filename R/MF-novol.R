@@ -22,8 +22,8 @@
 #' plot(Chain1)
 #' }
 BMFVAR.novol <- function(y, K, p, dist, y0 = NULL, prior = NULL, inits = NULL){
-  if (!(dist %in% c("Gaussian","Student",
-                    "MT","OT") ))
+  if (!(dist %in% c("Gaussian", "Student",
+                    "MT", "OT", "OST")))
     stop("dist is not implemented.")
 
   if (prior$SV == FALSE){
@@ -32,6 +32,7 @@ BMFVAR.novol <- function(y, K, p, dist, y0 = NULL, prior = NULL, inits = NULL){
     if (dist == "Student") Chain <- BMFVAR.Student.novol(y, K, p, y0, prior, inits)
     if (dist == "MT") Chain <- BMFVAR.MT.novol(y, K, p, y0, prior, inits)
     if (dist == "OT") Chain <- BMFVAR.OT.novol(y, K, p, y0, prior, inits)
+    if (dist == "OST") Chain <- BMFVAR.OST.novol(y, K, p, y0, prior, inits)
     elapsedTime = Sys.time() - Start
     print(elapsedTime)
     out <- list(mcmc = Chain,
