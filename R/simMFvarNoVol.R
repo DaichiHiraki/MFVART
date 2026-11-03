@@ -29,7 +29,7 @@ sim.MFVAR.novol <- function(dist, K = 5, p = 2, t_max = 1000,
                             idq = rep(0,K), freq = 3, aggregation = "identity", 
                             seednum = 0, burn_in = 0){
   if (!(dist %in% c("Gaussian","Student",
-                    "MT","OT") ))
+                    "MT","OT","OST") ))
     stop("dist is not implemented.")
   
   if (dist == "Gaussian") datagen <- sim.MFVAR.Gaussian.novol(K, p, t_max, b0, a0, h, y0, idq, freq, aggregation, seednum, burn_in)
@@ -37,6 +37,7 @@ sim.MFVAR.novol <- function(dist, K = 5, p = 2, t_max = 1000,
   
   if (dist == "MT") datagen <- sim.MFVAR.MT.novol(K, p, t_max, b0, a0, h, y0, nu, idq, freq, aggregation, seednum, burn_in)
   if (dist == "OT") datagen <- sim.MFVAR.OT.novol(K, p, t_max, b0, a0, h, y0, nu, idq, freq, aggregation, seednum, burn_in)
+  if (dist == "OST") datagen <- sim.MFVAR.OST.novol(K, p, t_max, b0, a0, h, y0, nu, gamma, idq, freq, aggregation, seednum, burn_in)
   
   return(datagen)
 }
